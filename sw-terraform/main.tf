@@ -3,9 +3,9 @@
 resource "aws_instance" "MyInstance" {
   ami           = var.ami
   instance_type = var.instance_type
-  key_name      = "teja-sshkey"
+  key_name      = var.key_name
   tags = {
     Name = "Web_server"
-    Env  = "Dev"
+    Environment  = var.environment
   }
 }
