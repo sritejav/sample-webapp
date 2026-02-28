@@ -5,7 +5,7 @@ resource "aws_instance" "MyInstance" {
   instance_type = var.instance_type
   key_name      = var.key_name
   tags = {
-    Name = "Web_server"
-    Environment  = var.environment
+    Name        = "Web_server"
+    Environment = var.environment
   }
 }
