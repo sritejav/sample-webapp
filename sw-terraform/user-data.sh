@@ -9,6 +9,9 @@
 # Log Files
 # Controlling Services & Daemons
 
+# We get this info from the website of Jenkins to install Jenkins on the Ubuntu Linux EC2 machine 
+
+
 set -e
 
 # Update packages 
