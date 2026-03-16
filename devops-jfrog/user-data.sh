@@ -1,42 +1,107 @@
 #!/bin/bash
-
-# Package Management
-# Search a Software is installed or not
-# Documentation
-# Configuration
-# Binary Files
-# DocumentRoot
-# Log Files
-# Controlling Services & Daemons
-
-# We get this info from the website of Jenkins to install Jenkins on the Ubuntu Linux EC2 machine 
-
-
 set -e
 
-# Update packages 
-apt update -y # apt or apt-get or dnf 
+############################
+# VARIABLES
+############################
+ARTIFACTORY_VERSION="7.55.6"     # Change version here
+HOSTNAME="jfrog.madeofmemories.in"
+INSTALL_DIR="/opt/jfrog"
 
-# Install Java 21
-apt install -y openjdk-21-jdk fontconfig openjdk-21-jre
+############################
+# SET HOSTNAME
+############################
+hostnamectl set-hostname ${HOSTNAME}
+echo "$(hostname -I | awk '{print $1}') ${HOSTNAME}" >> /etc/hosts
 
-# Verify Java
+############################
+# UPDATE & INSTALL PACKAGES
+############################
+apt update -y
+apt install -y openjdk-17-jdk curl wget unzip vim git tree
+
+############################
+# VERIFY JAVA
+############################
 java -version
 
-# Add Jenkins repository
-sudo wget -O /etc/apt/keyrings/jenkins-keyring.asc \
-  https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key
+# Backup the Environment File
+sudo cp -pvr /etc/environment "/etc/environment_$(date +%F_%R)"
 
-echo "deb [signed-by=/etc/apt/keyrings/jenkins-keyring.asc]" \
-  https://pkg.jenkins.io/debian-stable binary/ | sudo tee \
-  /etc/apt/sources.list.d/jenkins.list > /dev/null
+# Configure Environment Variables
+echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64/" >> /etc/environment
 
-sudo apt update
-sudo apt install jenkins -y
+# Create Environment Variables
+echo "JFROG_HOME=/opt/jfrog" >> /etc/environment
 
-# Enable & Start Jenkins
-systemctl enable jenkins
-systemctl start jenkins
+# Compile the Configuration
+source /etc/environment
 
-# Allow firewall if enabled
-ufw allow 8080 || true
+############################
+# CREATE JFROG USER
+############################
+useradd -r -m -U -d ${INSTALL_DIR} -s /bin/false jfrog || true
+
+############################
+# CREATE INSTALL DIRECTORY
+############################
+mkdir -p ${INSTALL_DIR}
+cd /opt
+
+############################
+# DOWNLOAD ARTIFACTORY
+############################
+wget https://releases.jfrog.io/artifactory/bintray-artifactory/org/artifactory/oss/jfrog-artifactory-oss/${ARTIFACTORY_VERSION}/jfrog-artifactory-oss-${ARTIFACTORY_VERSION}-linux.tar.gz
+
+############################
+# EXTRACT
+############################
+tar -xvzf jfrog-artifactory-oss-${ARTIFACTORY_VERSION}-linux.tar.gz
+mv artifactory-oss-${ARTIFACTORY_VERSION} ${INSTALL_DIR}
+
+# Delete a file that is no longer needed
+rm -rf /opt/jfrog-artifactory-oss-${ARTIFACTORY_VERSION}-linux.tar.gz
+
+############################
+# SET PERMISSIONS
+############################
+chown -R jfrog:jfrog ${INSTALL_DIR}
+chmod -R 755 ${INSTALL_DIR}
+
+############################
+# CREATE SYSTEMD SERVICE
+############################
+cat <<EOF > /etc/systemd/system/artifactory.service
+[Unit]
+Description=JFrog Artifactory Service
+After=network.target
+
+[Service]
+Type=forking
+User=jfrog
+Group=jfrog
+ExecStart=/opt/jfrog/app/bin/artifactory.sh start
+ExecStop=/opt/jfrog/app/bin/artifactory.sh stop
+Restart=always
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+############################
+# ENABLE & START SERVICE
+############################
+systemctl daemon-reload
+systemctl enable artifactory
+systemctl start artifactory
+
+############################
+# DISPLAY ACCESS INFO
+############################
+echo "----------------------------------------"
+echo "JFrog Artifactory Installed Successfully"
+echo "Access URL: http://$(curl -s ifconfig.me):8081"
+echo "Default User: admin"
+echo "Default Password: password"
+echo "----------------------------------------"

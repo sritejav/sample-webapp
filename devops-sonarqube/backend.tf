@@ -2,7 +2,7 @@
 terraform {
   backend "s3" {
     bucket = "samplewebapp-dev"
-    key    = "jfrog-terraform.tfstate"
+    key    = "sonarqube-terraform.tfstate"
     region = "ap-south-2"
   }
 }

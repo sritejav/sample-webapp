@@ -25,6 +25,6 @@ output "instance_type" {
   value       = aws_instance.web.instance_type
 }
 
-output "jenkins_url" {
-  value = "https://${aws_instance.web.public_ip}:8080"
+output "jfrog_url" {
+  value = "http://${aws_instance.web.public_ip}:8082"
 }

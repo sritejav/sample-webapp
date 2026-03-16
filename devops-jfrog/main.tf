@@ -1,7 +1,7 @@
 #Creating SG:
-resource "aws_security_group" "jenkins_sg" {
-  name        = "jenkins-sg"
-  description = "Allow SSh and jenkins"
+resource "aws_security_group" "jfrog_sg" {
+  name        = "jfrog-sg"
+  description = "Allow SSh and jfrog"
 
   ingress {
     description = "SSH"
@@ -12,9 +12,17 @@ resource "aws_security_group" "jenkins_sg" {
   }
 
   ingress {
-    description = "Jenkins"
-    from_port   = 8080
-    to_port     = 8080
+    description = "jfrog"
+    from_port   = 8081
+    to_port     = 8081
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "jfrog"
+    from_port   = 8082
+    to_port     = 8082
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -37,8 +45,8 @@ resource "aws_security_group" "jenkins_sg" {
 
 #IAM Role for EC2
 # Create an IAM role
-resource "aws_iam_role" "jenkins_role" {
-  name = "jenkins-ec2-role"
+resource "aws_iam_role" "jfrog_role" {
+  name = "jfrog-ec2-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -55,25 +63,25 @@ resource "aws_iam_role" "jenkins_role" {
 }
 
 # Attach a policy to the role
-resource "aws_iam_role_policy_attachment" "jenkins-role-attachment" {
-  role       = aws_iam_role.jenkins_role.name
+resource "aws_iam_role_policy_attachment" "jfrog-role-attachment" {
+  role       = aws_iam_role.jfrog_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
 }
 
-resource "aws_iam_role_policy_attachment" "jenkins_s3_access" {
-  role       = aws_iam_role.jenkins_role.name
+resource "aws_iam_role_policy_attachment" "jfrog_s3_access" {
+  role       = aws_iam_role.jfrog_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
 }
 
-resource "aws_iam_role_policy_attachment" "jenkins_ssm_access" {
-  role       = aws_iam_role.jenkins_role.name
+resource "aws_iam_role_policy_attachment" "jfrog_ssm_access" {
+  role       = aws_iam_role.jfrog_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMFullAccess"
 }
 
 # Create an instance profile (needed to attach role to EC2)
-resource "aws_iam_instance_profile" "jenkins_instance_profile" {
-  name = "jenkins-instance-profile"
-  role = aws_iam_role.jenkins_role.name
+resource "aws_iam_instance_profile" "jfrog_instance_profile" {
+  name = "jfrog-instance-profile"
+  role = aws_iam_role.jfrog_role.name
 }
 
 # Code taken from Terraform documentation for aws_instance
@@ -81,8 +89,8 @@ resource "aws_instance" "web" {
   ami                    = var.ami
   instance_type          = var.instance_type
   key_name               = var.key_name
-  vpc_security_group_ids = [aws_security_group.jenkins_sg.id]
-  iam_instance_profile   = aws_iam_instance_profile.jenkins_instance_profile.name
+  vpc_security_group_ids = [aws_security_group.jfrog_sg.id]
+  iam_instance_profile   = aws_iam_instance_profile.jfrog_instance_profile.name
   user_data              = file("user-data.sh")
 
   tags = {

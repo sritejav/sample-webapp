@@ -20,7 +20,7 @@ variable "project_name" {
 variable "name" {
   description = "Name of the resource"
   type        = string
-  default     = "JFrog-Server"
+  default     = "Sonarqube-Server"
 }
 variable "Created_By" {
   description = "Name of the resource creator"
