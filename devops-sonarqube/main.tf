@@ -103,7 +103,7 @@ resource "aws_instance" "sonarqube" {
   key_name               = var.key_name
   vpc_security_group_ids = [aws_security_group.sonarqube_sg.id]
   iam_instance_profile   = aws_iam_instance_profile.sonarqube_instance_profile.name
-  user_data              = file("user-data.sh")
+  user_data              = file("${path.module}/user-data.sh")
 
   root_block_device {
     volume_size = 30

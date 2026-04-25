@@ -91,3 +91,9 @@ resource "aws_instance" "web" {
     Project_name = var.project_name
   }
 }
+
+#To start the above instance with apply
+resource "aws_ec2_instance_state" "test_state" {
+  instance_id = aws_instance.web.id
+  state       = "running"
+}

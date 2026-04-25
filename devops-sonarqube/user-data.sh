@@ -1,147 +1,110 @@
+# Install Docker on Ubuntu Server
+
+#Setup Hostname
+sudo hostnamectl set-hostname "sonarqube.sampleApp.in"
+
+#Update the hostname part of Host File
+echo "`hostname -I | awk '{ print $1 }'` `hostname`" >> /etc/hosts
+
 #!/bin/bash
 set -e
 
-############################
-# VARIABLES
-############################
-SONARQUBE_VERSION="10.8.0.101323"
-INSTALL_DIR="/opt/sonarqube"
-SONAR_USER="sonar"
-DB_NAME="sonarqube"
-DB_USER="sonar"
-DB_PASSWORD="sonar123"
+# Update system
+sudo apt-get update
+sudo apt-get upgrade -y
 
-############################
-# SYSTEM TUNING
-############################
-# Set kernel parameters for SonarQube
-cat <<EOF >> /etc/sysctl.conf
-vm.max_map_count=524288
-fs.file-max=131072
-EOF
-sysctl -p
+# Install Docker
+sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
-# Set ulimit
-cat <<EOF >> /etc/security/limits.conf
-sonarqube   -   nofile   131072
-sonarqube   -   nproc    8192
-EOF
+# Start Docker
+sudo systemctl start docker
+sudo systemctl enable docker
 
-############################
-# UPDATE & INSTALL PACKAGES
-############################
-apt update -y
-apt install -y openjdk-17-jdk unzip wget postgresql postgresql-contrib
+# Add ubuntu user to docker group
+sudo usermod -aG docker ubuntu
 
-############################
-# VERIFY JAVA
-############################
-java -version
+# Install Docker Compose
+sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
 
-############################
-# CONFIGURE POSTGRESQL
-############################
-systemctl enable postgresql
-systemctl start postgresql
+# Create directories for SonarQube
+sudo mkdir -p /opt/sonarqube
+cd /opt/sonarqube
 
-# Create database and user
-sudo -u postgres psql <<EOF
-CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';
-CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};
-GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};
-ALTER USER ${DB_USER} WITH SUPERUSER;
-\q
-EOF
+# Create docker-compose.yml
+sudo bash -c 'cat > /opt/sonarqube/docker-compose.yml << EOF
+version: "3.8"
 
-############################
-# CREATE SONARQUBE USER
-############################
-useradd -r -m -U -d ${INSTALL_DIR} -s /bin/bash ${SONAR_USER} || true
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: sonarqube-postgres
+    environment:
+      POSTGRES_USER: sonarqube
+      POSTGRES_PASSWORD: sonarqube123
+      POSTGRES_DB: sonarqube
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - sonarqube-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonarqube"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-############################
-# DOWNLOAD & INSTALL SONARQUBE
-############################
-cd /tmp
-wget https://binaries.sonarsource.com/Distribution/sonarqube/sonarqube-${SONARQUBE_VERSION}.zip
-unzip sonarqube-${SONARQUBE_VERSION}.zip
-mv sonarqube-${SONARQUBE_VERSION} ${INSTALL_DIR}
+  sonarqube:
+    image: sonarqube:latest
+    container_name: sonarqube
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://postgres:5432/sonarqube
+      SONAR_JDBC_USERNAME: sonarqube
+      SONAR_JDBC_PASSWORD: sonarqube123
+      sonar.es.bootstrap.checks.disable: "true"
+    volumes:
+      - sonarqube-data:/opt/sonarqube/data
+      - sonarqube-logs:/opt/sonarqube/logs
+      - sonarqube-extensions:/opt/sonarqube/extensions
+    ports:
+      - "9000:9000"
+    networks:
+      - sonarqube-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
 
-############################
-# CONFIGURE SONARQUBE
-############################
-# Update sonar.properties
-cat <<EOF >> ${INSTALL_DIR}/conf/sonar.properties
+networks:
+  sonarqube-network:
+    driver: bridge
 
-# Database Configuration
-sonar.jdbc.username=${DB_USER}
-sonar.jdbc.password=${DB_PASSWORD}
-sonar.jdbc.url=jdbc:postgresql://localhost:5432/${DB_NAME}
+volumes:
+  postgres-data:
+  sonarqube-data:
+  sonarqube-logs:
+  sonarqube-extensions:
+EOF'
 
-# Web Server Configuration
-sonar.web.host=0.0.0.0
-sonar.web.port=9000
+# Change ownership
+sudo chown -R ubuntu:ubuntu /opt/sonarqube
 
-# Path Configuration
-sonar.path.data=${INSTALL_DIR}/data
-sonar.path.temp=${INSTALL_DIR}/temp
-EOF
+# Start SonarQube stack
+cd /opt/sonarqube
+sudo docker-compose up -d
 
-############################
-# SET PERMISSIONS
-############################
-chown -R ${SONAR_USER}:${SONAR_USER} ${INSTALL_DIR}
-
-############################
-# CREATE SYSTEMD SERVICE
-############################
-cat <<EOF > /etc/systemd/system/sonarqube.service
-[Unit]
-Description=SonarQube service
-After=syslog.target network.target
-
-[Service]
-Type=forking
-ExecStart=${INSTALL_DIR}/bin/linux-x86-64/sonar.sh start
-ExecStop=${INSTALL_DIR}/bin/linux-x86-64/sonar.sh stop
-ExecReload=${INSTALL_DIR}/bin/linux-x86-64/sonar.sh restart
-User=${SONAR_USER}
-Group=${SONAR_USER}
-Restart=always
-LimitNOFILE=131072
-LimitNPROC=8192
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-############################
-# ENABLE & START SONARQUBE
-############################
-systemctl daemon-reload
-systemctl enable sonarqube
-systemctl start sonarqube
-
-############################
-# CONFIGURE FIREWALL
-############################
-ufw allow 9000/tcp || true
-
-############################
-# DISPLAY ACCESS INFO
-############################
+# Wait for SonarQube to start
+echo "Waiting for SonarQube to start..."
 sleep 30
-echo "----------------------------------------"
-echo "SonarQube ${SONARQUBE_VERSION} Installed Successfully"
-echo "Access URL: http://$(curl -s ifconfig.me):9000"
-echo "Default User: admin"
-echo "Default Password: admin"
-echo "Database: ${DB_NAME}"
-echo "Database User: ${DB_USER}"
-echo "----------------------------------------"
-echo "Note: SonarQube may take 2-3 minutes to fully start"
-echo "----------------------------------------"
 
-############################
-# CLEANUP
-############################
-rm -f /tmp/sonarqube-${SONARQUBE_VERSION}.zip
+# Check if SonarQube is running
+sudo docker-compose ps
+
+echo "SonarQube Docker setup completed!"
+echo "Access SonarQube at: http://$(hostname -I | awk '{print $1}'):9000"
+echo "Default credentials - Username: admin, Password: admin"
